@@ -4,3 +4,5 @@ function Perfil(){
         <div><Navbar></Navbar></div>
     )
 }
+
+export default Perfil;
