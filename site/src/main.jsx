@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import Perfil from './view/Perfil.jsx'
 import Pokedex from './view/Pokedex.jsx'
+import GuessTermo from './view/GuessTermo.jsx'
 import { BrowserRouter, Routes, Route } from 'react-router'
 
 createRoot(document.getElementById('root')).render(
@@ -12,6 +13,7 @@ createRoot(document.getElementById('root')).render(
          <Route path='/' element={<App />}/>
          <Route path='/perfil/' element={<Perfil />}/>
          <Route path='/pokedex' element={<Pokedex />}/>
+         <Route path='/termo' element={<GuessTermo />}/>
     </Routes>
   </BrowserRouter>
 )

@@ -10,7 +10,10 @@ function Guess() {
     const [sugestoes, setSugestoes] = useState([]);
     const [pokemonDetalhes, setPokemonDetalhes] = useState({});
 
-
+    const capitalize = (str) => {
+        if (!str) return '';
+        return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+    }
 
     // 1. Quando o componente abre, buscamos um Pokémon aleatório (ex: ID entre 1 e 151)
     useEffect(() => {
@@ -54,29 +57,27 @@ function Guess() {
         }
     };
 
-
-
     // 2. Função para verificar se o palpite está correto
     const verificarPalpite = (e) => {
         e.preventDefault();
 
-        if (!pokemonSorteado) return;
+        // Bloqueia palpites se o jogo já acabou (acertou ou Game Over)
+        if (!pokemonSorteado || acertou) return;
 
         // Compara o que o aluno digitou com o nome do Pokémon da API (em letras minúsculas)
         if (tentativa.toLowerCase().trim() === pokemonSorteado.name.toLowerCase()) {
             setMensagem("🎉 Parabéns! Você acertou o Pokémon!");
             setAcertou(true);
-
-
         } else {
             setTentativasRestantes(tentativasRestantes - 1);
             setMensagem("❌ Errou! Tente novamente.");
             if (tentativasRestantes <= 1) {
-                setMensagem(`Game Over! O Pokémon era: ${pokemonSorteado.name}`);
+                setMensagem(`Game Over! O Pokémon era: ${capitalize(pokemonSorteado.name)}`);
                 setAcertou(true);
             }
         }
         setTentativa("");
+        setSugestoes([]);
     };
 
     // Enquanto a API não respondeu, mostra um carregando
@@ -108,6 +109,7 @@ function Guess() {
                                 type="text"
                                 placeholder="Digite o nome do Pokémon..."
                                 value={tentativa}
+                                disabled={acertou}
                                 onChange={(e) => {
                                     const valor = e.target.value.toLowerCase();
 
@@ -129,10 +131,10 @@ function Guess() {
                                         setSugestoes([]);
                                     }
                                 }}
-                                className="border border-gray-300 p-2 rounded-xl w-full outline-none"
+                                className="border border-gray-300 p-2 rounded-xl w-full outline-none disabled:bg-gray-200 disabled:cursor-not-allowed"
                             />
 
-                            {sugestoes.length > 0 && (
+                            {!acertou && sugestoes.length > 0 && (
                                 <div className="absolute top-full left-0 w-full bg-white border border-gray-300 rounded-xl shadow-lg mt-1 z-10 overflow-hidden">
 
                                     {sugestoes.map((pokemon) => {
@@ -188,7 +190,8 @@ function Guess() {
 
                         <button
                             type="submit"
-                            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold"
+                            disabled={acertou}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold disabled:bg-gray-400 disabled:cursor-not-allowed"
                         >
                             Chutar
                         </button>

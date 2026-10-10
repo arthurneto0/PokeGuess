@@ -3,7 +3,7 @@ function Pokedex(){
     return (
         <div>
             <Navbar></Navbar>
-            <h1></h1>
+        
         </div>
     )
 }
