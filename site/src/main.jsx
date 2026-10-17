@@ -6,14 +6,18 @@ import Perfil from './view/Perfil.jsx'
 import Pokedex from './view/Pokedex.jsx'
 import GuessTermo from './view/GuessTermo.jsx'
 import { BrowserRouter, Routes, Route } from 'react-router'
+import Layout from './components/Layout.jsx'
+
 
 createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <Routes>
-         <Route path='/' element={<App />}/>
-         <Route path='/perfil/' element={<Perfil />}/>
-         <Route path='/pokedex' element={<Pokedex />}/>
-         <Route path='/termo' element={<GuessTermo />}/>
+      <Route element={<Layout />}>
+        <Route path='/' element={<App />} />
+        <Route path='/perfil' element={<Perfil />} />
+        <Route path='/pokedex' element={<Pokedex />} />
+        <Route path='/termo' element={<GuessTermo />} />
+      </Route>
     </Routes>
   </BrowserRouter>
 )

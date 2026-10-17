@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Navbar from '../components/Navbar';
+import { registrarDescoberta } from '../utils/pokedexStorage';
 function Guess() {
     const [pokemonSorteado, setPokemonSorteado] = useState(null);
     const [tentativa, setTentativa] = useState("");
@@ -66,7 +67,15 @@ function Guess() {
 
         // Compara o que o aluno digitou com o nome do Pokémon da API (em letras minúsculas)
         if (tentativa.toLowerCase().trim() === pokemonSorteado.name.toLowerCase()) {
-            setMensagem("🎉 Parabéns! Você acertou o Pokémon!");
+            const novo = registrarDescoberta({
+                id: pokemonSorteado.id,
+                name: pokemonSorteado.name,
+            });
+            setMensagem(
+                novo
+                    ? "🎉 Parabéns! Você acertou! Pokémon adicionado à Pokédex."
+                    : "🎉 Parabéns! Você acertou o Pokémon!"
+            );
             setAcertou(true);
         } else {
             setTentativasRestantes(tentativasRestantes - 1);
@@ -86,7 +95,7 @@ function Guess() {
     }
     return (
         <div className='min-h-screen flex flex-col'>
-            <Navbar></Navbar>
+
             <div className="bg-yellow-200">
                 <div className="flex flex-col items-center justify-center p-6 bg-gray-100 rounded-2xl max-w-md mx-auto shadow-md mt-20 mb-39">
                     <h1 className="text-2xl font-bold mb-4">Adivinhe o Pokémon!</h1>
@@ -203,7 +212,6 @@ function Guess() {
                     {mensagem && <p className="mt-4 font-bold text-center text-lg">{mensagem}</p>}
                 </div>
             </div>
-            <footer className='bg-gray-900 text-white'>aa</footer>
         </div>
     )
 }

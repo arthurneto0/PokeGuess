@@ -26,7 +26,7 @@ function Navbar() {
     }, []);
 
     return (
-        <div className="bg-gray-900 flex justify-between h-10 items-center px-6">
+        <div className="bg-gray-900 flex justify-between h-10 items-center px-6 font-sans">
             <div className='flex gap-10 items-center'>
 
                 {/* Dropdown fixo em "Guess" */}
@@ -72,7 +72,7 @@ function Navbar() {
             </div>
 
             <div>
-                <Link className="flex flex-item h-10 text-white px-6 items-center bg-gray-900 justify-end" to='/perfil'>Meu Perfil</Link>
+                <Link className={linkClass} to='/perfil'>Meu Perfil</Link>
             </div>
         </div>
     )
