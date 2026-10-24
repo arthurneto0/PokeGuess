@@ -30,8 +30,15 @@ const capitalize = (str) => {
 
 const idDaUrl = (url) => url.split('/').filter(Boolean).pop();
 
-// Conta quantos Pokémon existem na árvore de evolução
-const contarNos = (no) => 1 + no.evolves_to.reduce((soma, filho) => soma + contarNos(filho), 0);
+// Descobre em qual posição da linha evolutiva a espécie está (1 = forma inicial, 2 = primeira evolução...)
+const posicaoNaCadeia = (no, especie, nivel = 1) => {
+    if (no.species.name === especie) return nivel;
+    for (const filho of no.evolves_to) {
+        const posicao = posicaoNaCadeia(filho, especie, nivel + 1);
+        if (posicao) return posicao;
+    }
+    return null;
+};
 
 // Busca um JSON e falha com uma mensagem clara se a resposta não for válida
 const buscarJson = async (url) => {
@@ -56,7 +63,9 @@ const comTentativas = async (funcao, vezes = 3) => {
 const lerAlvoSalvo = (chave) => {
     try {
         const salvo = localStorage.getItem(chave);
-        return salvo ? JSON.parse(salvo) : null;
+        const alvo = salvo ? JSON.parse(salvo) : null;
+        // Ignora dados salvos por uma versão antiga do jogo
+        return alvo && alvo.estagio !== undefined ? alvo : null;
     } catch {
         return null;
     }
@@ -76,8 +85,8 @@ const buscarInfoUnica = async (nomeOuId) => {
         tipos: pokemon.types.map((t) => t.type.name),
         altura: pokemon.height, // decímetros
         peso: pokemon.weight,   // hectogramas
-        // Total de evoluções da família inteira (ex: Charmander, Charmeleon, Charizard = 2)
-        evolucoes: contarNos(cadeia.chain) - 1,
+        // Posição na linha evolutiva (ex: Charmander = 1, Charmeleon = 2, Charizard = 3)
+        estagio: posicaoNaCadeia(cadeia.chain, species.name) ?? 1,
     };
 };
 
@@ -144,7 +153,11 @@ function LinhaPalpite({ palpite, alvo }) {
                 formatar={(v) => `${(v / 10).toFixed(1)} kg`}
             />
 
-            <CelulaNumero chute={palpite.evolucoes} alvo={alvo.evolucoes} />
+            <CelulaNumero
+                chute={palpite.estagio}
+                alvo={alvo.estagio}
+                formatar={(v) => `${v}º estágio`}
+            />
         </div>
     );
 }
@@ -166,7 +179,9 @@ function GuessTermo() {
     const [palpites, setPalpites] = useState(() => {
         try {
             const salvo = localStorage.getItem(`termo-pokemon-${dataHoje()}`);
-            return salvo ? JSON.parse(salvo) : [];
+            const lista = salvo ? JSON.parse(salvo) : [];
+            // Ignora palpites salvos por uma versão antiga do jogo
+            return lista.every((p) => p.estagio !== undefined) ? lista : [];
         } catch {
             return [];
         }
@@ -294,7 +309,7 @@ function GuessTermo() {
         <div className="flex flex-col items-center p-6 bg-gray-100 rounded-2xl max-w-3xl mx-auto shadow-md mt-10 mb-10">
             <h1 className="text-2xl font-bold mb-1">Termo Pokémon</h1>
             <p className="text-sm text-gray-600 mb-4 text-center">
-                Descubra o Pokémon do dia! Cada palpite mostra pistas sobre geração, tipo, altura, peso e evoluções.
+                Descubra o Pokémon do dia! Cada palpite mostra pistas sobre geração, tipo, altura, peso e estágio evolutivo.
             </p>
 
             <p className="text-sm text-gray-600 mb-2">
@@ -371,7 +386,7 @@ function GuessTermo() {
                         <span>Tipo</span>
                         <span>Altura</span>
                         <span>Peso</span>
-                        <span>Evoluções</span>
+                        <span>Estágio</span>
                     </div>
 
                     <div className="flex flex-col gap-2">
