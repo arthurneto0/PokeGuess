@@ -70,6 +70,7 @@ function Guess() {
             const novo = registrarDescoberta({
                 id: pokemonSorteado.id,
                 name: pokemonSorteado.name,
+                modo: 'silhouette',
             });
             setMensagem(
                 novo

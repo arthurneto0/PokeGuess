@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import Navbar from '../components/Navbar';
 import { registrarDescoberta } from '../utils/pokedexStorage';
 
 const MAX_TENTATIVAS = 8;
@@ -34,23 +33,43 @@ const idDaUrl = (url) => url.split('/').filter(Boolean).pop();
 // Conta quantos Pokémon existem na árvore de evolução
 const contarNos = (no) => 1 + no.evolves_to.reduce((soma, filho) => soma + contarNos(filho), 0);
 
+// Busca um JSON e falha com uma mensagem clara se a resposta não for válida
+const buscarJson = async (url) => {
+    const resposta = await fetch(url);
+    if (!resposta.ok) throw new Error(`Erro ${resposta.status} ao buscar ${url}`);
+    return resposta.json();
+};
+
+// Tenta de novo algumas vezes se a requisição falhar (a PokéAPI às vezes oscila)
+const comTentativas = async (funcao, vezes = 3) => {
+    for (let i = 0; i < vezes; i++) {
+        try {
+            return await funcao();
+        } catch (erro) {
+            if (i === vezes - 1) throw erro;
+            await new Promise((resolve) => setTimeout(resolve, 500 * (i + 1)));
+        }
+    }
+};
+
+// Pokémon do dia já buscado fica guardado no navegador, então reabrir a página não depende da API
+const lerAlvoSalvo = (chave) => {
+    try {
+        const salvo = localStorage.getItem(chave);
+        return salvo ? JSON.parse(salvo) : null;
+    } catch {
+        return null;
+    }
+};
+
 // Busca tudo que o jogo precisa sobre um Pokémon
-const buscarInfo = async (nomeOuId) => {
+const buscarInfoUnica = async (nomeOuId) => {
+    const pokemon = await buscarJson(`https://pokeapi.co/api/v2/pokemon/${nomeOuId}`);
+    const species = await buscarJson(pokemon.species.url);
+    const cadeia = await buscarJson(species.evolution_chain.url);
+
     return {
         id: pokemon.id,
-        name: pokemon.name,
-        sprite: pokemon.sprites.front_default,
-        // ... resto igual
-    };
-
-    const respPokemon = await fetch(`https://pokeapi.co/api/v2/pokemon/${nomeOuId}`);
-    if (!respPokemon.ok) throw new Error('Pokémon não encontrado');
-    const pokemon = await respPokemon.json();
-
-    const species = await fetch(pokemon.species.url).then((r) => r.json());
-    const cadeia = await fetch(species.evolution_chain.url).then((r) => r.json());
-
-    return {
         name: pokemon.name,
         sprite: pokemon.sprites.front_default,
         geracao: Number(idDaUrl(species.generation.url)),
@@ -62,9 +81,7 @@ const buscarInfo = async (nomeOuId) => {
     };
 };
 
-
-
-
+const buscarInfo = (nomeOuId) => comTentativas(() => buscarInfoUnica(nomeOuId));
 
 function Celula({ cor, children }) {
     return (
@@ -132,12 +149,13 @@ function LinhaPalpite({ palpite, alvo }) {
     );
 }
 
-function Termo() {
+function GuessTermo() {
     const [dia] = useState(dataHoje);
     const chaveSalva = `termo-pokemon-${dia}`;
 
-    const [alvo, setAlvo] = useState(null);
+    const [alvo, setAlvo] = useState(() => lerAlvoSalvo(`termo-alvo-${dataHoje()}`));
     const [erroCarga, setErroCarga] = useState(false);
+    const [tentativaCarga, setTentativaCarga] = useState(0);
     const [listaPokemon, setListaPokemon] = useState([]);
     const [tentativa, setTentativa] = useState("");
     const [sugestoes, setSugestoes] = useState([]);
@@ -163,12 +181,20 @@ function Termo() {
         }
     }, [palpites, chaveSalva]);
 
-    // Pokémon do dia
+    // Pokémon do dia (só busca na API se ainda não estiver salvo)
     useEffect(() => {
+        if (alvo) return;
+
         let cancelado = false;
         buscarInfo(idDoDia(dia))
             .then((info) => {
-                if (!cancelado) setAlvo(info);
+                if (cancelado) return;
+                setAlvo(info);
+                try {
+                    localStorage.setItem(`termo-alvo-${dia}`, JSON.stringify(info));
+                } catch {
+                    // sem localStorage, o jogo continua funcionando
+                }
             })
             .catch((erro) => {
                 console.error("Erro ao buscar o Pokémon do dia:", erro);
@@ -177,12 +203,11 @@ function Termo() {
         return () => {
             cancelado = true;
         };
-    }, [dia]);
+    }, [dia, alvo, tentativaCarga]);
 
     // Lista de nomes para o autocomplete
     useEffect(() => {
-        fetch(`https://pokeapi.co/api/v2/pokemon?limit=${TOTAL_POKEMON}`)
-            .then((resposta) => resposta.json())
+        comTentativas(() => buscarJson(`https://pokeapi.co/api/v2/pokemon?limit=${TOTAL_POKEMON}`))
             .then((dados) => setListaPokemon(dados.results))
             .catch((erro) => console.error("Erro ao buscar lista de Pokémon:", erro));
     }, []);
@@ -207,43 +232,58 @@ function Termo() {
         }
     };
 
-const chutar = async (e) => {
-    e.preventDefault();
-    if (fim || carregando || !alvo) return;
+    const chutar = async (e) => {
+        e.preventDefault();
+        if (fim || carregando || !alvo) return;
 
-    const nome = tentativa.trim().toLowerCase();
+        const nome = tentativa.trim().toLowerCase();
 
-    if (!listaPokemon.some((p) => p.name === nome)) {
-        setMensagem("Pokémon não encontrado. Escolha um da lista de sugestões.");
-        return;
-    }
-    if (palpites.some((p) => p.name === nome)) {
-        setMensagem("Você já chutou esse Pokémon.");
-        return;
-    }
-
-    setCarregando(true);
-    try {
-        const info = await buscarInfo(nome);
-
-        if (info.name === alvo.name) {
-            registrarDescoberta({ id: info.id, name: info.name });
+        if (!listaPokemon.some((p) => p.name === nome)) {
+            setMensagem("Pokémon não encontrado. Escolha um da lista de sugestões.");
+            return;
+        }
+        if (palpites.some((p) => p.name === nome)) {
+            setMensagem("Você já chutou esse Pokémon.");
+            return;
         }
 
-        setPalpites((anterior) => [...anterior, info]);
-        setMensagem("");
-    } catch (erro) {
-        console.error("Erro ao buscar o palpite:", erro);
-        setMensagem("Erro ao buscar o Pokémon. Tente de novo.");
-    } finally {
-        setCarregando(false);
-        setTentativa("");
-        setSugestoes([]);
-    }
-};
+        setCarregando(true);
+        try {
+            const info = await buscarInfo(nome);
+
+            // Acertou: registra na Pokédex
+            if (info.name === alvo.name) {
+                registrarDescoberta({ id: info.id, name: info.name, modo: 'termo' });
+            }
+
+            setPalpites((anterior) => [...anterior, info]);
+            setMensagem("");
+        } catch (erro) {
+            console.error("Erro ao buscar o palpite:", erro);
+            setMensagem("Erro ao buscar o Pokémon. Tente de novo.");
+        } finally {
+            setCarregando(false);
+            setTentativa("");
+            setSugestoes([]);
+        }
+    };
 
     if (erroCarga) {
-        return <div className="p-6 text-center font-bold">Não foi possível carregar o Pokémon do dia. Recarregue a página.</div>;
+        return (
+            <div className="p-6 text-center">
+                <p className="font-bold mb-3">Não foi possível carregar o Pokémon do dia.</p>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setErroCarga(false);
+                        setTentativaCarga((n) => n + 1);
+                    }}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold"
+                >
+                    Tentar de novo
+                </button>
+            </div>
+        );
     }
 
     if (!alvo) {
@@ -251,115 +291,107 @@ const chutar = async (e) => {
     }
 
     return (
-        <div className="min-h-screen flex flex-col">
+        <div className="flex flex-col items-center p-6 bg-gray-100 rounded-2xl max-w-3xl mx-auto shadow-md mt-10 mb-10">
+            <h1 className="text-2xl font-bold mb-1">Termo Pokémon</h1>
+            <p className="text-sm text-gray-600 mb-4 text-center">
+                Descubra o Pokémon do dia! Cada palpite mostra pistas sobre geração, tipo, altura, peso e evoluções.
+            </p>
 
+            <p className="text-sm text-gray-600 mb-2">
+                Tentativa {Math.min(palpites.length + (fim ? 0 : 1), MAX_TENTATIVAS)} de {MAX_TENTATIVAS}
+            </p>
 
-            <div className="bg-yellow-200 flex-1">
-                <div className="flex flex-col items-center p-6 bg-gray-100 rounded-2xl max-w-3xl mx-auto shadow-md mt-10 mb-10">
-                    <h1 className="text-2xl font-bold mb-1">Termo Pokémon</h1>
-                    <p className="text-sm text-gray-600 mb-4 text-center">
-                        Descubra o Pokémon do dia! Cada palpite mostra pistas sobre geração, tipo, altura, peso e evoluções.
-                    </p>
+            {/* Formulário de palpite */}
+            <form onSubmit={chutar} className="flex gap-2 w-full max-w-md">
+                <div className="relative flex-1">
+                    <input
+                        type="text"
+                        placeholder="Digite o nome do Pokémon..."
+                        value={tentativa}
+                        disabled={fim}
+                        onChange={aoDigitar}
+                        className="border border-gray-300 p-2 rounded-xl w-full outline-none bg-white disabled:bg-gray-200 disabled:cursor-not-allowed"
+                    />
 
-                    <p className="text-sm text-gray-600 mb-2">
-                        Tentativa {Math.min(palpites.length + (fim ? 0 : 1), MAX_TENTATIVAS)} de {MAX_TENTATIVAS}
-                    </p>
-
-                    {/* Formulário de palpite */}
-                    <form onSubmit={chutar} className="flex gap-2 w-full max-w-md">
-                        <div className="relative flex-1">
-                            <input
-                                type="text"
-                                placeholder="Digite o nome do Pokémon..."
-                                value={tentativa}
-                                disabled={fim}
-                                onChange={aoDigitar}
-                                className="border border-gray-300 p-2 rounded-xl w-full outline-none bg-white disabled:bg-gray-200 disabled:cursor-not-allowed"
-                            />
-
-                            {!fim && sugestoes.length > 0 && (
-                                <div className="absolute top-full left-0 w-full bg-white border border-gray-300 rounded-xl shadow-lg mt-1 z-10 overflow-hidden">
-                                    {sugestoes.map((pokemon) => (
-                                        <button
-                                            key={pokemon.name}
-                                            type="button"
-                                            onClick={() => {
-                                                setTentativa(pokemon.name);
-                                                setSugestoes([]);
-                                            }}
-                                            className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-100 text-left"
-                                        >
-                                            <img
-                                                src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idDaUrl(pokemon.url)}.png`}
-                                                alt={pokemon.name}
-                                                className="w-10 h-10 object-contain"
-                                            />
-                                            <p className="font-bold capitalize">{pokemon.name}</p>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={fim || carregando}
-                            className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold disabled:bg-gray-400 disabled:cursor-not-allowed"
-                        >
-                            {carregando ? '...' : 'Chutar'}
-                        </button>
-                    </form>
-
-                    {mensagem && <p className="mt-3 text-sm font-bold text-red-600 text-center">{mensagem}</p>}
-
-                    {/* Resultado final */}
-                    {fim && (
-                        <div className="mt-4 flex flex-col items-center">
-                            <img src={alvo.sprite} alt={alvo.name} className="w-28 h-28 object-contain" />
-                            <p className="font-bold text-center text-lg">
-                                {venceu
-                                    ? `🎉 Você acertou em ${palpites.length} ${palpites.length === 1 ? 'tentativa' : 'tentativas'}! Era ${capitalize(alvo.name)}.`
-                                    : `Fim de jogo! O Pokémon do dia era ${capitalize(alvo.name)}.`}
-                            </p>
-                            <p className="text-sm text-gray-600">Volte amanhã para um novo Pokémon.</p>
-                            {venceu && <p className="text-sm text-gray-600">Registrado na sua Pokédex.</p>}
+                    {!fim && sugestoes.length > 0 && (
+                        <div className="absolute top-full left-0 w-full bg-white border border-gray-300 rounded-xl shadow-lg mt-1 z-10 overflow-hidden">
+                            {sugestoes.map((pokemon) => (
+                                <button
+                                    key={pokemon.name}
+                                    type="button"
+                                    onClick={() => {
+                                        setTentativa(pokemon.name);
+                                        setSugestoes([]);
+                                    }}
+                                    className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-100 text-left"
+                                >
+                                    <img
+                                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${idDaUrl(pokemon.url)}.png`}
+                                        alt={pokemon.name}
+                                        className="w-10 h-10 object-contain"
+                                    />
+                                    <p className="font-bold capitalize">{pokemon.name}</p>
+                                </button>
+                            ))}
                         </div>
                     )}
+                </div>
 
-                    {/* Tabela de palpites */}
-                    {palpites.length > 0 && (
-                        <div className="w-full mt-6 overflow-x-auto">
-                            <div className="grid grid-cols-6 gap-2 mb-2 min-w-[36rem] text-center text-xs font-bold uppercase tracking-wider text-gray-600">
-                                <span>Pokémon</span>
-                                <span>Geração</span>
-                                <span>Tipo</span>
-                                <span>Altura</span>
-                                <span>Peso</span>
-                                <span>Evoluções</span>
-                            </div>
+                <button
+                    type="submit"
+                    disabled={fim || carregando}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                    {carregando ? '...' : 'Chutar'}
+                </button>
+            </form>
 
-                            <div className="flex flex-col gap-2">
-                                {[...palpites].reverse().map((palpite) => (
-                                    <LinhaPalpite key={palpite.name} palpite={palpite} alvo={alvo} />
-                                ))}
-                            </div>
-                        </div>
-                    )}
+            {mensagem && <p className="mt-3 text-sm font-bold text-red-600 text-center">{mensagem}</p>}
 
-                    {/* Legenda */}
-                    <div className="mt-6 text-xs text-gray-600 flex flex-wrap justify-center gap-x-4 gap-y-1">
-                        <span><span className="inline-block w-3 h-3 rounded bg-green-500 align-middle"></span> Igual</span>
-                        <span><span className="inline-block w-3 h-3 rounded bg-yellow-500 align-middle"></span> Parcial (só em tipos)</span>
-                        <span><span className="inline-block w-3 h-3 rounded bg-red-500 align-middle"></span> Diferente</span>
-                        <span>▲ o do dia é maior</span>
-                        <span>▼ o do dia é menor</span>
+            {/* Resultado final */}
+            {fim && (
+                <div className="mt-4 flex flex-col items-center">
+                    <img src={alvo.sprite} alt={alvo.name} className="w-28 h-28 object-contain" />
+                    <p className="font-bold text-center text-lg">
+                        {venceu
+                            ? `🎉 Você acertou em ${palpites.length} ${palpites.length === 1 ? 'tentativa' : 'tentativas'}! Era ${capitalize(alvo.name)}.`
+                            : `Fim de jogo! O Pokémon do dia era ${capitalize(alvo.name)}.`}
+                    </p>
+                    <p className="text-sm text-gray-600">Volte amanhã para um novo Pokémon.</p>
+                    {venceu && <p className="text-sm text-gray-600">Registrado na sua Pokédex.</p>}
+                </div>
+            )}
+
+            {/* Tabela de palpites */}
+            {palpites.length > 0 && (
+                <div className="w-full mt-6 overflow-x-auto">
+                    <div className="grid grid-cols-6 gap-2 mb-2 min-w-[36rem] text-center text-xs font-bold uppercase tracking-wider text-gray-600">
+                        <span>Pokémon</span>
+                        <span>Geração</span>
+                        <span>Tipo</span>
+                        <span>Altura</span>
+                        <span>Peso</span>
+                        <span>Evoluções</span>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                        {[...palpites].reverse().map((palpite) => (
+                            <LinhaPalpite key={palpite.name} palpite={palpite} alvo={alvo} />
+                        ))}
                     </div>
                 </div>
+            )}
+
+            {/* Legenda */}
+            <div className="mt-6 text-xs text-gray-600 flex flex-wrap justify-center gap-x-4 gap-y-1">
+                <span><span className="inline-block w-3 h-3 rounded bg-green-500 align-middle"></span> Igual</span>
+                <span><span className="inline-block w-3 h-3 rounded bg-yellow-500 align-middle"></span> Parcial (só em tipos)</span>
+                <span><span className="inline-block w-3 h-3 rounded bg-red-500 align-middle"></span> Diferente</span>
+                <span>▲ o do dia é maior</span>
+                <span>▼ o do dia é menor</span>
             </div>
-
-
         </div>
     );
 }
 
-export default Termo;
+export default GuessTermo;
